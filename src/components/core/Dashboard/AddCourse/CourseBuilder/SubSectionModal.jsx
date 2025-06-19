@@ -1,144 +1,203 @@
-// Import necessary modules
-const Section = require("../models/Section")
-const SubSection = require("../models/SubSection")
-const { uploadImageToCloudinary } = require("../utils/imageUploader")
+import { useEffect, useState } from "react"
+import { useForm } from "react-hook-form"
+import { toast } from "react-hot-toast"
+import { RxCross2 } from "react-icons/rx"
+import { useDispatch, useSelector } from "react-redux"
 
-// Create a new sub-section for a given section
-exports.createSubSection = async (req, res) => {
-  try {
-    // Extract necessary information from the request body
-    const { sectionId, title, description } = req.body
-    const video = req.files.video
+import {
+  createSubSection,
+  updateSubSection,
+} from "../../../../../services/operations/courseDetailsAPI"
+import { setCourse } from "../../../../../slices/courseSlice"
+import Upload from "../Upload"
+import IconBtn from "../../../../common/IconBtn"
 
-    // Check if all necessary fields are provided
-    if (!sectionId || !title || !description || !video) {
-      return res
-        .status(404)
-        .json({ success: false, message: "All Fields are Required" })
+export default function SubSectionModal({
+  modalData,
+  setModalData,
+  add = false,
+  view = false,
+  edit = false,
+}) {
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    formState: { errors },
+    getValues,
+  } = useForm()
+
+  // console.log("view", view)
+  // console.log("edit", edit)
+  // console.log("add", add)
+
+  const dispatch = useDispatch()
+  const [loading, setLoading] = useState(false)
+  const { token } = useSelector((state) => state.auth)
+  const { course } = useSelector((state) => state.course)
+
+  useEffect(() => {
+    if (view || edit) {
+      // console.log("modalData", modalData)
+      setValue("lectureTitle", modalData.title)
+      setValue("lectureDesc", modalData.description)
+      setValue("lectureVideo", modalData.videoUrl)
     }
-    console.log(video)
+  }, [])
 
-    // Upload the video file to Cloudinary
-    const uploadDetails = await uploadImageToCloudinary(
-      video,
-      process.env.FOLDER_NAME
-    )
-    console.log(uploadDetails)
-    // Create a new sub-section with the necessary information
-    const SubSectionDetails = await SubSection.create({
-      title: title,
-      timeDuration: `${uploadDetails.duration}`,
-      description: description,
-      videoUrl: uploadDetails.secure_url,
-    })
-
-    // Update the corresponding section with the newly created sub-section
-    const updatedSection = await Section.findByIdAndUpdate(
-      { _id: sectionId },
-      { $push: { subSection: SubSectionDetails._id } },
-      { new: true }
-    ).populate("subSection")
-
-    // Return the updated section in the response
-    return res.status(200).json({ success: true, data: updatedSection })
-  } catch (error) {
-    // Handle any errors that may occur during the process
-    console.error("Error creating new sub-section:", error)
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-      error: error.message,
-    })
+  // detect whether form is updated or not
+  const isFormUpdated = () => {
+    const currentValues = getValues()
+    // console.log("changes after editing form values:", currentValues)
+    if (
+      currentValues.lectureTitle !== modalData.title ||
+      currentValues.lectureDesc !== modalData.description ||
+      currentValues.lectureVideo !== modalData.videoUrl
+    ) {
+      return true
+    }
+    return false
   }
-}
 
-
-exports.updateSubSection = async (req, res) => {
-  try {
-    const { sectionId, subSectionId, title, description } = req.body
-    const subSection = await SubSection.findById(subSectionId)
-
-    if (!subSection) {
-      return res.status(404).json({
-        success: false,
-        message: "SubSection not found",
-      })
+  // handle the editing of subsection
+  const handleEditSubsection = async () => {
+    const currentValues = getValues()
+    // console.log("changes after editing form values:", currentValues)
+    const formData = new FormData()
+    // console.log("Values After Editing form values:", currentValues)
+    formData.append("sectionId", modalData.sectionId)
+    formData.append("subSectionId", modalData._id)
+    if (currentValues.lectureTitle !== modalData.title) {
+      formData.append("title", currentValues.lectureTitle)
     }
-
-    if (title !== undefined) {
-      subSection.title = title
+    if (currentValues.lectureDesc !== modalData.description) {
+      formData.append("description", currentValues.lectureDesc)
     }
-
-    if (description !== undefined) {
-      subSection.description = description
+    if (currentValues.lectureVideo !== modalData.videoUrl) {
+      formData.append("video", currentValues.lectureVideo)
     }
-    if (req.files && req.files.video !== undefined) {
-      const video = req.files.video
-      const uploadDetails = await uploadImageToCloudinary(
-        video,
-        process.env.FOLDER_NAME
+    setLoading(true)
+    const result = await updateSubSection(formData, token)
+    if (result) {
+      // console.log("result", result)
+      // update the structure of course
+      const updatedCourseContent = course.courseContent.map((section) =>
+        section._id === modalData.sectionId ? result : section
       )
-      subSection.videoUrl = uploadDetails.secure_url
-      subSection.timeDuration = `${uploadDetails.duration}`
+      const updatedCourse = { ...course, courseContent: updatedCourseContent }
+      dispatch(setCourse(updatedCourse))
     }
-
-    await subSection.save()
-
-    // find updated section and return it
-    const updatedSection = await Section.findById(sectionId).populate(
-      "subSection"
-    )
-
-    console.log("updated section", updatedSection)
-
-    return res.json({
-      success: true,
-      message: "Section updated successfully",
-      data: updatedSection,
-    })
-  } catch (error) {
-    console.error(error)
-    return res.status(500).json({
-      success: false,
-      message: "An error occurred while updating the section",
-    })
+    setModalData(null)
+    setLoading(false)
   }
-}
 
-exports.deleteSubSection = async (req, res) => {
-  try {
-    const { subSectionId, sectionId } = req.body
-    await Section.findByIdAndUpdate(
-      { _id: sectionId },
-      {
-        $pull: {
-          subSection: subSectionId,
-        },
+  const onSubmit = async (data) => {
+    // console.log(data)
+    if (view) return
+
+    if (edit) {
+      if (!isFormUpdated()) {
+        toast.error("No changes made to the form")
+      } else {
+        handleEditSubsection()
       }
-    )
-    const subSection = await SubSection.findByIdAndDelete({ _id: subSectionId })
-
-    if (!subSection) {
-      return res
-        .status(404)
-        .json({ success: false, message: "SubSection not found" })
+      return
     }
 
-    // find updated section and return it
-    const updatedSection = await Section.findById(sectionId).populate(
-      "subSection"
-    )
-
-    return res.json({
-      success: true,
-      message: "SubSection deleted successfully",
-      data: updatedSection,
-    })
-  } catch (error) {
-    console.error(error)
-    return res.status(500).json({
-      success: false,
-      message: "An error occurred while deleting the SubSection",
-    })
+    const formData = new FormData()
+    formData.append("sectionId", modalData)
+    formData.append("title", data.lectureTitle)
+    formData.append("description", data.lectureDesc)
+    formData.append("video", data.lectureVideo)
+    setLoading(true)
+    const result = await createSubSection(formData, token)
+    if (result) {
+      // update the structure of course
+      const updatedCourseContent = course.courseContent.map((section) =>
+        section._id === modalData ? result : section
+      )
+      const updatedCourse = { ...course, courseContent: updatedCourseContent }
+      dispatch(setCourse(updatedCourse))
+    }
+    setModalData(null)
+    setLoading(false)
   }
+
+  return (
+    <div className="fixed inset-0 z-[1000] !mt-0 grid h-screen w-screen place-items-center overflow-auto bg-white bg-opacity-10 backdrop-blur-sm">
+      <div className="my-10 w-11/12 max-w-[700px] rounded-lg border border-richblack-400 bg-richblack-800">
+        {/* Modal Header */}
+        <div className="flex items-center justify-between rounded-t-lg bg-richblack-700 p-5">
+          <p className="text-xl font-semibold text-richblack-5">
+            {view && "Viewing"} {add && "Adding"} {edit && "Editing"} Lecture
+          </p>
+          <button onClick={() => (!loading ? setModalData(null) : {})}>
+            <RxCross2 className="text-2xl text-richblack-5" />
+          </button>
+        </div>
+        {/* Modal Form */}
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          className="space-y-8 px-8 py-10"
+        >
+          {/* Lecture Video Upload */}
+          <Upload
+            name="lectureVideo"
+            label="Lecture Video"
+            register={register}
+            setValue={setValue}
+            errors={errors}
+            video={true}
+            viewData={view ? modalData.videoUrl : null}
+            editData={edit ? modalData.videoUrl : null}
+          />
+          {/* Lecture Title */}
+          <div className="flex flex-col space-y-2">
+            <label className="text-sm text-richblack-5" htmlFor="lectureTitle">
+              Lecture Title {!view && <sup className="text-pink-200">*</sup>}
+            </label>
+            <input
+              disabled={view || loading}
+              id="lectureTitle"
+              placeholder="Enter Lecture Title"
+              {...register("lectureTitle", { required: true })}
+              className="form-style w-full"
+            />
+            {errors.lectureTitle && (
+              <span className="ml-2 text-xs tracking-wide text-pink-200">
+                Lecture title is required
+              </span>
+            )}
+          </div>
+          {/* Lecture Description */}
+          <div className="flex flex-col space-y-2">
+            <label className="text-sm text-richblack-5" htmlFor="lectureDesc">
+              Lecture Description{" "}
+              {!view && <sup className="text-pink-200">*</sup>}
+            </label>
+            <textarea
+              disabled={view || loading}
+              id="lectureDesc"
+              placeholder="Enter Lecture Description"
+              {...register("lectureDesc", { required: true })}
+              className="form-style resize-x-none min-h-[130px] w-full"
+            />
+            {errors.lectureDesc && (
+              <span className="ml-2 text-xs tracking-wide text-pink-200">
+                Lecture Description is required
+              </span>
+            )}
+          </div>
+          {!view && (
+            <div className="flex justify-end">
+              <IconBtn
+                disabled={loading}
+                text={loading ? "Loading.." : edit ? "Save Changes" : "Save"}
+              />
+            </div>
+          )}
+        </form>
+      </div>
+    </div>
+  )
 }
