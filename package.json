@@ -31,13 +31,9 @@
     "video-react": "^0.16.0",
     "web-vitals": "^2.1.4"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/thepranaygupta/react-tailwind-css-starter-pack.git"
-  },
-  "author": "Pranay Gupta",
+  "author": "Viraj Makhija",
   "bugs": {
-    "url": "https://github.com/thepranaygupta/react-tailwind-css-starter-pack/issues"
+    "url": "https://github.com/VirajMakhija1213"
   },
   "scripts": {
     "start": "react-scripts start",
